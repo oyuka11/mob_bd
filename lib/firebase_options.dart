@@ -46,6 +46,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '33963227390',
     projectId: 'my-cool-project-ef700',
     authDomain: 'my-cool-project-ef700.firebaseapp.com',
+    databaseURL: 'https://my-cool-project-ef700-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'my-cool-project-ef700.firebasestorage.app',
     measurementId: 'G-L2MHY8QN6B',
   );
@@ -55,6 +56,7 @@ class DefaultFirebaseOptions {
     appId: '1:33963227390:android:719e6c8aca7aa3fa7b8daf',
     messagingSenderId: '33963227390',
     projectId: 'my-cool-project-ef700',
+    databaseURL: 'https://my-cool-project-ef700-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'my-cool-project-ef700.firebasestorage.app',
   );
 
@@ -63,6 +65,7 @@ class DefaultFirebaseOptions {
     appId: '1:33963227390:ios:b71e3a7f81f576937b8daf',
     messagingSenderId: '33963227390',
     projectId: 'my-cool-project-ef700',
+    databaseURL: 'https://my-cool-project-ef700-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'my-cool-project-ef700.firebasestorage.app',
     iosBundleId: 'com.example.mobBd',
   );
@@ -72,6 +75,7 @@ class DefaultFirebaseOptions {
     appId: '1:33963227390:ios:b71e3a7f81f576937b8daf',
     messagingSenderId: '33963227390',
     projectId: 'my-cool-project-ef700',
+    databaseURL: 'https://my-cool-project-ef700-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'my-cool-project-ef700.firebasestorage.app',
     iosBundleId: 'com.example.mobBd',
   );
@@ -82,6 +86,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '33963227390',
     projectId: 'my-cool-project-ef700',
     authDomain: 'my-cool-project-ef700.firebaseapp.com',
+    databaseURL: 'https://my-cool-project-ef700-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'my-cool-project-ef700.firebasestorage.app',
     measurementId: 'G-ZRCVYNLQSE',
   );
