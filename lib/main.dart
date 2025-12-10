@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:uuid/uuid.dart';
 import 'firebase_options.dart';
 
 // ------------------------- MAIN ENTRY -------------------------
@@ -687,6 +689,79 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showTwoPlayerDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.people, color: Color(0xFF6C63FF)),
+            SizedBox(width: 10),
+            Text('2 Тоглогчийн горим сонгох'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Та хэрхэн тоглохоо сонгоно уу:',
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            ),
+            SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFF4CAF50),
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                ),
+                icon: Icon(Icons.wifi),
+                label: Text('ОНЛАЙН ТОГЛОХ'),
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => OnlineGameLobby(
+                        uid: widget.user.uid,
+                        playerName: _displayName,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  side: BorderSide(color: Color(0xFF6C63FF)),
+                ),
+                icon: Icon(Icons.phone_android, color: Color(0xFF6C63FF)),
+                label: Text(
+                  'НЭГЭН УТСАНД',
+                  style: TextStyle(color: Color(0xFF6C63FF)),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showLocalGameDialog(context);
+                },
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Цуцлах'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLocalGameDialog(BuildContext context) {
     final player1Ctrl = TextEditingController(text: _displayName);
     final player2Ctrl = TextEditingController();
 
@@ -696,9 +771,9 @@ class _HomePageState extends State<HomePage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Icon(Icons.people, color: Color(0xFF6C63FF)),
+            Icon(Icons.phone_android, color: Color(0xFF6C63FF)),
             SizedBox(width: 10),
-            Text('2 Тоглогчийн тохиргоо'),
+            Text('Локал тоглолт'),
           ],
         ),
         content: Column(
@@ -1584,6 +1659,683 @@ class _Game2PPageState extends State<Game2PPage> {
                 .toList(),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ------------------------- ONLINE MULTIPLAYER -------------------------
+
+class OnlineGameLobby extends StatefulWidget {
+  final String uid;
+  final String playerName;
+
+  OnlineGameLobby({required this.uid, required this.playerName});
+
+  @override
+  _OnlineGameLobbyState createState() => _OnlineGameLobbyState();
+}
+
+class _OnlineGameLobbyState extends State<OnlineGameLobby> {
+  final _db = FirebaseDatabase.instance.ref();
+  String? _gameRoomId;
+  bool _creating = false;
+  final _roomCodeCtrl = TextEditingController();
+
+  Future<void> _createRoom() async {
+    setState(() => _creating = true);
+    try {
+      final uuid = Uuid();
+      final roomId = uuid.v4().substring(0, 6).toUpperCase();
+      
+      await _db.child('game_rooms').child(roomId).set({
+        'roomId': roomId,
+        'player1': {
+          'uid': widget.uid,
+          'name': widget.playerName,
+          'choice': null,
+        },
+        'player2': null,
+        'status': 'waiting',
+        'createdAt': ServerValue.timestamp,
+      });
+
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => OnlineGameRoom(
+              roomId: roomId,
+              playerNumber: 1,
+              uid: widget.uid,
+              playerName: widget.playerName,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Алдаа: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  Future<void> _joinRoom() async {
+    final roomId = _roomCodeCtrl.text.trim().toUpperCase();
+    if (roomId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Өрөөний код оруулна уу!')),
+      );
+      return;
+    }
+
+    try {
+      final snapshot = await _db.child('game_rooms').child(roomId).get();
+      
+      if (!snapshot.exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Өрөө олдсонгүй!')),
+          );
+        }
+        return;
+      }
+
+      final data = snapshot.value as Map;
+      if (data['status'] != 'waiting') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Өрөө дүүрсэн байна!')),
+          );
+        }
+        return;
+      }
+
+      await _db.child('game_rooms').child(roomId).child('player2').set({
+        'uid': widget.uid,
+        'name': widget.playerName,
+        'choice': null,
+      });
+
+      await _db.child('game_rooms').child(roomId).child('status').set('playing');
+
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => OnlineGameRoom(
+              roomId: roomId,
+              playerNumber: 2,
+              uid: widget.uid,
+              playerName: widget.playerName,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Алдаа: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Онлайн тоглолт')),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.wifi, size: 80, color: Color(0xFF6C63FF)),
+            SizedBox(height: 20),
+            Text(
+              'Онлайн тоглолт',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 10),
+            Text(
+              'Өөр утастай найзтайгаа тоглоорой!',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+            SizedBox(height: 40),
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      height: 60,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFF4CAF50),
+                        ),
+                        onPressed: _creating ? null : _createRoom,
+                        icon: _creating
+                            ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(Icons.add),
+                        label: Text(
+                          _creating ? 'Үүсгэж байна...' : 'ӨРӨӨ ҮҮСГЭХ',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 24),
+                    Divider(),
+                    SizedBox(height: 24),
+                    Text(
+                      'Эсвэл өрөөнд орох:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 16),
+                    TextField(
+                      controller: _roomCodeCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: InputDecoration(
+                        labelText: 'Өрөөний код',
+                        prefixIcon: Icon(Icons.key),
+                        hintText: 'ABC123',
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 60,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFF6C63FF),
+                        ),
+                        onPressed: _joinRoom,
+                        icon: Icon(Icons.login),
+                        label: Text('ОРОХ', style: TextStyle(fontSize: 16)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class OnlineGameRoom extends StatefulWidget {
+  final String roomId;
+  final int playerNumber;
+  final String uid;
+  final String playerName;
+
+  OnlineGameRoom({
+    required this.roomId,
+    required this.playerNumber,
+    required this.uid,
+    required this.playerName,
+  });
+
+  @override
+  _OnlineGameRoomState createState() => _OnlineGameRoomState();
+}
+
+class _OnlineGameRoomState extends State<OnlineGameRoom> {
+  final _db = FirebaseDatabase.instance.ref();
+  final _fire = FirebaseFirestore.instance;
+  MoveChoice? _myChoice;
+  String _resultText = '';
+  Color _resultColor = Colors.black87;
+  bool _saving = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    _listenToRoom();
+  }
+
+  void _listenToRoom() {
+    _db.child('game_rooms').child(widget.roomId).onValue.listen((event) {
+      if (!mounted) return;
+      
+      final data = event.snapshot.value as Map?;
+      if (data == null) return;
+
+      final player1 = data['player1'] as Map?;
+      final player2 = data['player2'] as Map?;
+      
+      if (player1 != null && player2 != null) {
+        final p1Choice = player1['choice'] as String?;
+        final p2Choice = player2['choice'] as String?;
+
+        if (p1Choice != null && p2Choice != null) {
+          _evaluateResult(p1Choice, p2Choice, player1['name'], player2['name']);
+        }
+      }
+    });
+  }
+
+  void _evaluateResult(String p1ChoiceStr, String p2ChoiceStr, String p1Name, String p2Name) {
+    final p1Choice = _stringToChoice(p1ChoiceStr);
+    final p2Choice = _stringToChoice(p2ChoiceStr);
+    
+    if (p1Choice == null || p2Choice == null) return;
+
+    final score = evaluateRound(p1Choice, p2Choice);
+    
+    setState(() {
+      if (score == 1) {
+        _resultText = widget.playerNumber == 1 ? '🎉 ТА ЯЛЛАА!' : '😢 ТА ЯЛАГДЛАА';
+        _resultColor = widget.playerNumber == 1 ? Colors.green : Colors.red;
+      } else if (score == -1) {
+        _resultText = widget.playerNumber == 2 ? '🎉 ТА ЯЛЛАА!' : '😢 ТА ЯЛАГДЛАА';
+        _resultColor = widget.playerNumber == 2 ? Colors.green : Colors.red;
+      } else {
+        _resultText = 'ТЭНЦЭЭ!';
+        _resultColor = Colors.orange;
+      }
+    });
+  }
+
+  MoveChoice? _stringToChoice(String str) {
+    if (str == 'Чулуу') return MoveChoice.rock;
+    if (str == 'Хайч') return MoveChoice.paper;
+    if (str == 'Давуу') return MoveChoice.scissors;
+    return null;
+  }
+
+  Future<void> _makeChoice(MoveChoice choice) async {
+    setState(() => _myChoice = choice);
+    
+    try {
+      await _db
+          .child('game_rooms')
+          .child(widget.roomId)
+          .child('player${widget.playerNumber}')
+          .child('choice')
+          .set(choiceToText(choice));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Алдаа: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveResult() async {
+    setState(() => _saving = true);
+
+    try {
+      final snapshot = await _db.child('game_rooms').child(widget.roomId).get();
+      final data = snapshot.value as Map;
+      final player1 = data['player1'] as Map;
+      final player2 = data['player2'] as Map;
+
+      final doc = {
+        'roomId': widget.roomId,
+        'player1Name': player1['name'],
+        'player2Name': player2['name'],
+        'player1Choice': player1['choice'],
+        'player2Choice': player2['choice'],
+        'playedAt': Timestamp.now(),
+        'playedAtServer': FieldValue.serverTimestamp(),
+      };
+
+      await _fire.collection('online_games').add(doc);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 10),
+                Text('Амжилттай хадгаллаа!'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Алдаа: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _reset() async {
+    try {
+      await _db.child('game_rooms').child(widget.roomId).update({
+        'player1/choice': null,
+        'player2/choice': null,
+      });
+      
+      setState(() {
+        _myChoice = null;
+        _resultText = '';
+        _resultColor = Colors.black87;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Алдаа: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: () async {
+        await _db.child('game_rooms').child(widget.roomId).remove();
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Өрөө: ${widget.roomId}'),
+          actions: [
+            IconButton(
+              icon: Icon(Icons.copy),
+              tooltip: 'Код хуулах',
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Өрөөний код: ${widget.roomId}')),
+                );
+              },
+            ),
+          ],
+        ),
+        body: StreamBuilder(
+          stream: _db.child('game_rooms').child(widget.roomId).onValue,
+          builder: (context, AsyncSnapshot snapshot) {
+            if (!snapshot.hasData) {
+              return Center(child: CircularProgressIndicator());
+            }
+
+            final data = snapshot.data!.snapshot.value as Map?;
+            if (data == null) {
+              return Center(child: Text('Өрөө олдсонгүй'));
+            }
+
+            final player1 = data['player1'] as Map?;
+            final player2 = data['player2'] as Map?;
+            final status = data['status'] as String?;
+
+            if (status == 'waiting' && player2 == null) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 20),
+                    Text(
+                      'Найз хүлээж байна...',
+                      style: TextStyle(fontSize: 18),
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      'Өрөөний код: ${widget.roomId}',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF6C63FF),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            final p1Choice = player1?['choice'] as String?;
+            final p2Choice = player2?['choice'] as String?;
+            final bothChosen = p1Choice != null && p2Choice != null;
+
+            return Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 15,
+                          offset: Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      _resultText.isEmpty
+                          ? (_myChoice == null
+                              ? 'Сонголтоо хийнэ үү'
+                              : 'Нөгөө тоглогч хүлээж байна...')
+                          : _resultText,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: _resultColor,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 30),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildOnlinePlayerDisplay(
+                        player1?['name'] ?? 'Тоглогч 1',
+                        p1Choice,
+                        bothChosen,
+                        Color(0xFF6C63FF),
+                      ),
+                      Container(width: 2, height: 100, color: Colors.grey.shade300),
+                      _buildOnlinePlayerDisplay(
+                        player2?['name'] ?? 'Тоглогч 2',
+                        p2Choice,
+                        bothChosen,
+                        Color(0xFF4CAF50),
+                      ),
+                    ],
+                  ),
+                  Spacer(),
+                  if (_myChoice == null) ...[
+                    Text(
+                      'Сонголтоо хийнэ үү:',
+                      style: TextStyle(fontSize: 18, color: Colors.grey[700]),
+                    ),
+                    SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildGameCard(MoveChoice.rock),
+                        _buildGameCard(MoveChoice.paper),
+                        _buildGameCard(MoveChoice.scissors),
+                      ],
+                    ),
+                  ] else if (bothChosen) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFF6C63FF),
+                        ),
+                        onPressed: _saving ? null : _saveResult,
+                        icon: _saving
+                            ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(Icons.save),
+                        label: Text(_saving ? 'Хадгалж байна...' : 'ҮР ДҮНГ ХАДГАЛАХ'),
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          side: BorderSide(color: Color(0xFF4CAF50)),
+                        ),
+                        onPressed: _reset,
+                        icon: Icon(Icons.refresh, color: Color(0xFF4CAF50)),
+                        label: Text(
+                          'ДАХИН ТОГЛОХ',
+                          style: TextStyle(
+                            color: Color(0xFF4CAF50),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              'Таны сонголт: ${choiceToEmoji(_myChoice!)}\nНөгөө тоглогч сонгож байна...',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  SizedBox(height: 20),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOnlinePlayerDisplay(String name, String? choice, bool reveal, Color color) {
+    return Column(
+      children: [
+        CircleAvatar(
+          radius: 25,
+          backgroundColor: color,
+          child: Text(
+            name.isNotEmpty ? name[0].toUpperCase() : '?',
+            style: TextStyle(fontSize: 20, color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+        SizedBox(height: 8),
+        Text(
+          name,
+          style: TextStyle(fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        SizedBox(height: 12),
+        Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: choice != null ? color : Colors.grey.shade300,
+              width: 3,
+            ),
+          ),
+          child: Text(
+            reveal && choice != null
+                ? _getEmojiForChoiceText(choice)
+                : (choice != null ? '✅' : '❓'),
+            style: TextStyle(fontSize: 40),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _getEmojiForChoiceText(String text) {
+    if (text == 'Чулуу') return '🪨';
+    if (text == 'Хайч') return '✂️';
+    if (text == 'Давуу') return '📄';
+    return '❓';
+  }
+
+  Widget _buildGameCard(MoveChoice choice) {
+    bool isSelected = _myChoice == choice;
+    return GestureDetector(
+      onTap: () => _makeChoice(choice),
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: 200),
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected ? Color(0xFF6C63FF) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? Color(0xFF6C63FF) : Colors.grey.shade300,
+            width: 2,
+          ),
+          boxShadow: [
+            if (!isSelected)
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: Offset(0, 5),
+              ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Text(choiceToEmoji(choice), style: TextStyle(fontSize: 40)),
+            SizedBox(height: 5),
+            Text(
+              choiceToText(choice),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isSelected ? Colors.white : Colors.black87,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
