@@ -593,7 +593,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                         SizedBox(height: 10),
                         Text(
-                          "Хайч, Чулуу, Давуу сонгоод \nкомпьютертэй өрсөлдөөрэй!",
+                          "Хайч, Чулуу, Давуу сонгоод\nкомпьютер эсвэл найзтайгаа өрсөлдөөрэй!",
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: Colors.grey[600],
@@ -622,8 +622,37 @@ class _HomePageState extends State<HomePage> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
+                                Icon(Icons.computer),
+                                SizedBox(width: 10),
                                 Text(
-                                  "ТОГЛОЖ ЭХЛЭХ",
+                                  "VS КОМПЬЮТЕР",
+                                  style: TextStyle(fontSize: 18),
+                                ),
+                                SizedBox(width: 10),
+                                Icon(Icons.arrow_forward_rounded),
+                              ],
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 60,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Color(0xFF4CAF50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            onPressed: () => _showTwoPlayerDialog(context),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.people),
+                                SizedBox(width: 10),
+                                Text(
+                                  "2 ТОГЛОГЧ",
                                   style: TextStyle(fontSize: 18),
                                 ),
                                 SizedBox(width: 10),
@@ -653,6 +682,79 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showTwoPlayerDialog(BuildContext context) {
+    final player1Ctrl = TextEditingController(text: _displayName);
+    final player2Ctrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.people, color: Color(0xFF6C63FF)),
+            SizedBox(width: 10),
+            Text('2 Тоглогчийн тохиргоо'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: player1Ctrl,
+              decoration: InputDecoration(
+                labelText: '1-р тоглогч',
+                prefixIcon: Icon(Icons.person),
+              ),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: player2Ctrl,
+              decoration: InputDecoration(
+                labelText: '2-р тоглогч',
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Цуцлах'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF4CAF50),
+            ),
+            onPressed: () {
+              final p1 = player1Ctrl.text.trim();
+              final p2 = player2Ctrl.text.trim();
+              if (p1.isEmpty || p2.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Тоглогчдын нэрийг оруулна уу!'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(context);
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => Game2PPage(
+                    player1Name: p1,
+                    player2Name: p2,
+                  ),
+                ),
+              );
+            },
+            child: Text('ЭХЛЭХ'),
+          ),
+        ],
       ),
     );
   }
@@ -1187,6 +1289,8 @@ class _Game2PPageState extends State<Game2PPage> {
   MoveChoice? _player2Choice;
   final _fire = FirebaseFirestore.instance;
   String _resultText = '';
+  Color _resultColor = Colors.black87;
+  bool _saving = false;
 
   int evaluate2P(MoveChoice p1, MoveChoice p2) {
     if (p1 == p2) return 0;
@@ -1199,6 +1303,7 @@ class _Game2PPageState extends State<Game2PPage> {
 
   Future<void> _saveResult() async {
     if (_player1Choice == null || _player2Choice == null) return;
+    setState(() => _saving = true);
 
     final score = evaluate2P(_player1Choice!, _player2Choice!);
     final doc = {
@@ -1215,7 +1320,43 @@ class _Game2PPageState extends State<Game2PPage> {
       'playedAt': Timestamp.now(),
       'playedAtServer': FieldValue.serverTimestamp(),
     };
-    await _fire.collection('games').add(doc);
+
+    try {
+      await _fire.collection('games').add(doc);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 10),
+                Text('Амжилттай хадгаллаа!'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Алдаа: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _reset() {
+    setState(() {
+      _player1Choice = null;
+      _player2Choice = null;
+      _resultText = '';
+      _resultColor = Colors.black87;
+    });
   }
 
   void _play(MoveChoice choice, int player) {
@@ -1225,11 +1366,16 @@ class _Game2PPageState extends State<Game2PPage> {
 
       if (_player1Choice != null && _player2Choice != null) {
         final score = evaluate2P(_player1Choice!, _player2Choice!);
-        _resultText = score == 1
-            ? "${widget.player1Name} яллаа!"
-            : score == -1
-            ? "${widget.player2Name} яллаа!"
-            : "Тэнцээ!";
+        if (score == 1) {
+          _resultText = "🎉 ${widget.player1Name} ЯЛЛАА!";
+          _resultColor = Colors.green;
+        } else if (score == -1) {
+          _resultText = "🎉 ${widget.player2Name} ЯЛЛАА!";
+          _resultColor = Colors.green;
+        } else {
+          _resultText = "ТЭНЦЭЭ!";
+          _resultColor = Colors.orange;
+        }
       }
     });
   }
@@ -1237,29 +1383,101 @@ class _Game2PPageState extends State<Game2PPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("2 Player тоглолт")),
+      appBar: AppBar(title: Text("2 Тоглогч")),
       body: Padding(
-        padding: EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20.0),
         child: Column(
           children: [
-            Text(
-              _resultText,
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildPlayerColumn(widget.player1Name, _player1Choice, 1),
-                _buildPlayerColumn(widget.player2Name, _player2Choice, 2),
-              ],
-            ),
-            Spacer(),
-            if (_player1Choice != null && _player2Choice != null)
-              ElevatedButton(
-                onPressed: _saveResult,
-                child: Text("Үр дүнг хадгалах"),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 15,
+                    offset: Offset(0, 5),
+                  ),
+                ],
               ),
+              child: Text(
+                _resultText.isEmpty ? 'Тоглогчид сонголтоо хийнэ үү' : _resultText,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: _resultColor,
+                ),
+              ),
+            ),
+            SizedBox(height: 30),
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildPlayerColumn(widget.player1Name, _player1Choice, 1),
+                  Container(
+                    width: 2,
+                    color: Colors.grey.shade300,
+                  ),
+                  _buildPlayerColumn(widget.player2Name, _player2Choice, 2),
+                ],
+              ),
+            ),
+            if (_player1Choice != null && _player2Choice != null)
+              Column(
+                children: [
+                  SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Color(0xFF6C63FF),
+                      ),
+                      onPressed: _saving ? null : _saveResult,
+                      icon: _saving
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Icon(Icons.save),
+                      label: Text(
+                        _saving ? 'Хадгалж байна...' : 'ҮР ДҮНГ ХАДГАЛАХ',
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        side: BorderSide(color: Color(0xFF4CAF50)),
+                      ),
+                      onPressed: _reset,
+                      icon: Icon(Icons.refresh, color: Color(0xFF4CAF50)),
+                      label: Text(
+                        'ДАХИН ТОГЛОХ',
+                        style: TextStyle(
+                          color: Color(0xFF4CAF50),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            SizedBox(height: 20),
           ],
         ),
       ),
@@ -1267,38 +1485,106 @@ class _Game2PPageState extends State<Game2PPage> {
   }
 
   Widget _buildPlayerColumn(String name, MoveChoice? choice, int player) {
-    return Column(
-      children: [
-        Text(name, style: TextStyle(fontWeight: FontWeight.bold)),
-        SizedBox(height: 10),
-        AnimatedSwitcher(
-          duration: Duration(milliseconds: 300),
-          child: Text(
-            choice != null ? choiceToEmoji(choice) : '❓',
-            key: ValueKey(choice),
-            style: TextStyle(fontSize: 50),
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircleAvatar(
+            radius: 30,
+            backgroundColor: player == 1 ? Color(0xFF6C63FF) : Color(0xFF4CAF50),
+            child: Text(
+              name.isNotEmpty ? name[0].toUpperCase() : '?',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
           ),
-        ),
-        SizedBox(height: 10),
-        Row(
-          children: MoveChoice.values
-              .map(
-                (c) => GestureDetector(
-                  onTap: () => _play(c, player),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Column(
-                      children: [
-                        Text(choiceToEmoji(c), style: TextStyle(fontSize: 30)),
-                        Text(choiceToText(c)),
-                      ],
+          SizedBox(height: 8),
+          Text(
+            name,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 20),
+          Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: choice != null
+                    ? (player == 1 ? Color(0xFF6C63FF) : Color(0xFF4CAF50))
+                    : Colors.grey.shade300,
+                width: 3,
+              ),
+            ),
+            child: AnimatedSwitcher(
+              duration: Duration(milliseconds: 300),
+              child: Text(
+                choice != null ? choiceToEmoji(choice) : '❓',
+                key: ValueKey(choice),
+                style: TextStyle(fontSize: 50),
+              ),
+            ),
+          ),
+          SizedBox(height: 30),
+          Text(
+            'Сонголтоо хийнэ үү:',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
+          ),
+          SizedBox(height: 10),
+          Column(
+            children: MoveChoice.values
+                .map(
+                  (c) => GestureDetector(
+                    onTap: () => _play(c, player),
+                    child: Container(
+                      margin: EdgeInsets.only(bottom: 8),
+                      padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: choice == c
+                            ? (player == 1 ? Color(0xFF6C63FF) : Color(0xFF4CAF50))
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: choice == c
+                              ? (player == 1 ? Color(0xFF6C63FF) : Color(0xFF4CAF50))
+                              : Colors.grey.shade300,
+                          width: 2,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            choiceToEmoji(c),
+                            style: TextStyle(fontSize: 24),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            choiceToText(c),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: choice == c ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              )
-              .toList(),
-        ),
-      ],
+                )
+                .toList(),
+          ),
+        ],
+      ),
     );
   }
 }
